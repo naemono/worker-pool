@@ -1,18 +1,24 @@
-package main
+package dispatcher
 
 import (
 	"sync"
 
+	"github.com/naemono/test-concurrency/worker"
+
 	log "github.com/sirupsen/logrus"
 )
 
-var wg sync.WaitGroup
+var (
+	wg sync.WaitGroup
+	// JobQueue A buffered channel that we can send work requests on.
+	JobQueue chan worker.Job
+)
 
 // Dispatcher dispatches jobs
 type Dispatcher struct {
-	Workers []*Worker
+	Workers []*worker.Worker
 	// A pool of workers channels that are registered with the dispatcher
-	WorkerPool     chan chan Job
+	WorkerPool     chan chan worker.Job
 	maxWorkers     int
 	wg             sync.WaitGroup
 	stopping       bool
@@ -22,9 +28,9 @@ type Dispatcher struct {
 
 // NewDispatcher returns a new Dispatcher
 func NewDispatcher(maxWorkers int) *Dispatcher {
-	pool := make(chan chan Job, maxWorkers)
+	pool := make(chan chan worker.Job, maxWorkers)
 	return &Dispatcher{
-		Workers:        []*Worker{},
+		Workers:        []*worker.Worker{},
 		WorkerPool:     pool,
 		wg:             sync.WaitGroup{},
 		maxWorkers:     maxWorkers,
@@ -38,7 +44,7 @@ func NewDispatcher(maxWorkers int) *Dispatcher {
 func (d *Dispatcher) Run() {
 	// starting n number of workers
 	for i := 0; i < d.maxWorkers; i++ {
-		worker := NewWorker(d.WorkerPool, &d.processedJobs)
+		worker := worker.NewWorker(d.WorkerPool, &d.processedJobs)
 		d.Workers = append(d.Workers, &worker)
 		worker.Start()
 	}
@@ -57,7 +63,7 @@ func (d *Dispatcher) dispatch() {
 			wg.Add(1)
 			d.dispatchedJobs++
 			// a job request has been received
-			go func(job Job) {
+			go func(job worker.Job) {
 				defer wg.Done()
 				// try to obtain a worker job channel that is available.
 				// this will block until a worker is idle

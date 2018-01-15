@@ -1,6 +1,8 @@
-package main
+package worker
 
-import log "github.com/sirupsen/logrus"
+import (
+	log "github.com/sirupsen/logrus"
+)
 
 // Worker represents the worker that executes the job
 type Worker struct {
@@ -8,6 +10,20 @@ type Worker struct {
 	JobChannel    chan Job
 	quit          chan bool
 	processedJobs *int
+}
+
+// Message is the message type to be received
+type Message struct {
+	Method    string `json: "Method"`
+	ClusterID string `json: "ClusterID,omitempty"`
+	// Intent here is to ensure json, or yaml
+	// Example here https://mlafeldt.github.io/blog/teaching-go-programs-to-love-json-and-yaml/
+	Payload []byte `json: "Payload"`
+}
+
+// Job represents the job to be run
+type Job struct {
+	Payload Message
 }
 
 // NewWorker return s new Worker
