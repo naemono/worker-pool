@@ -1,6 +1,8 @@
 package worker
 
 import (
+	"sync"
+
 	log "github.com/sirupsen/logrus"
 )
 
@@ -10,6 +12,8 @@ type Worker struct {
 	JobChannel    chan Job
 	quit          chan bool
 	processedJobs *int
+	wg            sync.WaitGroup
+	workerFunc    func(job Job) error
 }
 
 // Message is the message type to be received
@@ -27,12 +31,15 @@ type Job struct {
 }
 
 // NewWorker return s new Worker
-func NewWorker(workerPool chan chan Job, processedJobs *int) Worker {
+func NewWorker(workerPool chan chan Job, processedJobs *int, workerFunc func(job Job) error) Worker {
+	log.Info("Creating new worker")
 	return Worker{
 		WorkerPool:    workerPool,
 		JobChannel:    make(chan Job, 4),
-		quit:          make(chan bool),
+		quit:          make(chan bool, 1),
 		processedJobs: processedJobs,
+		wg:            sync.WaitGroup{},
+		workerFunc:    workerFunc,
 	}
 }
 
@@ -47,9 +54,13 @@ func (w Worker) Start() {
 			select {
 			case job := <-w.JobChannel:
 				// we have received a work request.
-				log.Debug("Got job", job.Payload.Method)
-				*w.processedJobs++
-
+				log.Debugf("Got job with method: %s", job.Payload.Method)
+				w.wg.Add(1)
+				go func() {
+					defer w.wg.Done()
+					go w.workerFunc(job)
+					*w.processedJobs++
+				}()
 			case <-w.quit:
 				// we have received a signal to stop
 				return
@@ -60,7 +71,7 @@ func (w Worker) Start() {
 
 // Stop signals the worker to stop listening for work requests.
 func (w Worker) Stop() {
-	go func() {
-		w.quit <- true
-	}()
+	w.quit <- true
+	w.wg.Wait()
+	return
 }
